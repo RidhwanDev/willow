@@ -1,0 +1,54 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode user state
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+
+# Xcode build output
+build/
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+
+# CocoaPods / Carthage generated dependencies
+Pods/
+Carthage/Build/
+
+# Fastlane generated output
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output/
+
+# Logs and local environment
+*.log
+*.tmp
+*.swp
+*.swo
+.env
+.env.*
+
+# Local app data and simulators
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.store
+
+# Keep source, asset catalogs, and project files tracked:
+# - Willow/**/*.swift
+# - Willow/**/*.xcassets
+# - Willow.xcodeproj/project.pbxproj

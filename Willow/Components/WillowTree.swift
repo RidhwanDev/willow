@@ -233,12 +233,46 @@ private struct WillowTreeFigure: View {
 
     // MARK: Hanging fronds + drifting leaves (single Canvas)
 
-    private static let strands: [(x: CGFloat, y: CGFloat, length: CGFloat)] = [
-        (28, 150, 96), (52, 168, 118), (78, 178, 132), (104, 186, 142),
-        (132, 192, 148), (160, 196, 150), (190, 196, 148), (218, 190, 144),
-        (246, 184, 136), (272, 174, 124), (298, 162, 104), (318, 148, 86),
-        (66, 150, 100), (170, 170, 120), (250, 152, 108), (120, 160, 112)
-    ]
+    private struct Frond {
+        let x: CGFloat
+        let y: CGFloat
+        let length: CGFloat
+        let stemWidth: CGFloat
+        let leafScale: CGFloat
+    }
+
+    /// Crown fronds (short, draped over the top of the canopy) followed by
+    /// the main curtain. Built once: a dense comb with deterministic jitter
+    /// and a bell-shaped length profile so the middle hangs lowest, like a
+    /// real weeping willow. Drawn crown-first so the long curtain layers
+    /// over it.
+    private static let fronds: [Frond] = {
+        var result: [Frond] = []
+
+        // Short fronds spilling over the crown for depth on top of the canopy.
+        let crown: [(x: CGFloat, y: CGFloat, length: CGFloat)] = [
+            (118, 84, 56), (148, 70, 66), (178, 66, 72), (208, 74, 64),
+            (236, 90, 52), (100, 102, 48), (258, 106, 46), (192, 92, 60),
+            (134, 78, 60), (224, 80, 58)
+        ]
+        for frond in crown {
+            result.append(Frond(x: frond.x, y: frond.y, length: frond.length, stemWidth: 1.0, leafScale: 0.82))
+        }
+
+        // Main curtain: a dense row of strands across the canopy underside.
+        let count = 30
+        for i in 0..<count {
+            let f = Double(i) / Double(count - 1)          // 0...1 across the width
+            let bell = sin(f * .pi)                         // 0 at edges, 1 in the middle
+            let jitterX = CGFloat(sin(Double(i) * 12.9898)) * 4
+            let jitterLen = CGFloat(sin(Double(i) * 4.231)) * 12
+            let x = 22 + CGFloat(f) * 296 + jitterX
+            let y = 148 + CGFloat(bell) * 48
+            let length = 86 + CGFloat(bell) * 66 + jitterLen
+            result.append(Frond(x: x, y: y, length: length, stemWidth: 1.2, leafScale: 1.0))
+        }
+        return result
+    }()
 
     private static let drifters: [(x: CGFloat, speed: Double, seed: Double)] = [
         (70, 0.060, 0.10), (130, 0.050, 0.45), (200, 0.070, 0.80),
@@ -248,22 +282,23 @@ private struct WillowTreeFigure: View {
     private var frondCanvas: some View {
         Canvas { context, _ in
             let tones = pose.leafTones
-            let stemShading = GraphicsContext.Shading.color(pose.stemColor.opacity(0.70))
             let leafAlpha = 0.55 + 0.35 * pose.vitality
+            let stemColor = pose.stemColor.opacity(0.70)
 
-            for (index, strand) in Self.strands.enumerated() {
-                let amplitude = 6 + Double(strand.length) * 0.07
-                let sway = CGFloat(pose.sway(x: strand.x, amplitude: amplitude, phase: Double(index) * 0.35))
-                let anchor = CGPoint(x: strand.x, y: strand.y + pose.droop)
-                let tip = CGPoint(x: strand.x + sway, y: strand.y + strand.length + pose.droop)
-                let control = CGPoint(x: strand.x + sway * 0.42, y: strand.y + strand.length * 0.55 + pose.droop)
+            for (index, frond) in Self.fronds.enumerated() {
+                let amplitude = 6 + Double(frond.length) * 0.07
+                let sway = CGFloat(pose.sway(x: frond.x, amplitude: amplitude, phase: Double(index) * 0.35))
+                let anchor = CGPoint(x: frond.x, y: frond.y + pose.droop)
+                let tip = CGPoint(x: frond.x + sway, y: frond.y + frond.length + pose.droop)
+                let control = CGPoint(x: frond.x + sway * 0.42, y: frond.y + frond.length * 0.55 + pose.droop)
 
                 var stem = Path()
                 stem.move(to: anchor)
                 stem.addQuadCurve(to: tip, control: control)
-                context.stroke(stem, with: stemShading, style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                context.stroke(stem, with: .color(stemColor), style: StrokeStyle(lineWidth: frond.stemWidth, lineCap: .round))
 
-                let leafCount = max(6, Int(strand.length / 18))
+                let leafCount = max(5, Int(frond.length / 18))
+                let scale = frond.leafScale
                 for leaf in 0..<leafCount {
                     let t = CGFloat(leaf + 1) / CGFloat(leafCount + 1)
                     let point = quadPoint(anchor, control, tip, t)
@@ -273,7 +308,7 @@ private struct WillowTreeFigure: View {
                     let rotation = Double(tangent) - .pi / 2 + side * 0.58 + flutter
                     let tone = tones[(index + leaf) % tones.count]
 
-                    var leafPath = Path(ellipseIn: CGRect(x: -1.7, y: -5, width: 3.4, height: 10))
+                    var leafPath = Path(ellipseIn: CGRect(x: -1.7 * scale, y: -5 * scale, width: 3.4 * scale, height: 10 * scale))
                     leafPath = leafPath.applying(
                         CGAffineTransform(rotationAngle: rotation)
                             .concatenating(CGAffineTransform(translationX: point.x, y: point.y))

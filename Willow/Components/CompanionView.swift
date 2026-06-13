@@ -36,9 +36,6 @@ struct CompanionView: View {
             .offset(y: isBouncing ? -5 : 3)
             .animation(.easeInOut(duration: bounceDuration).repeatForever(autoreverses: true).delay(delay), value: isBouncing)
 
-            Text(parent.companionName)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(WillowColors.deepLeaf)
         }
         .onAppear {
             isBouncing = state != .needsCare

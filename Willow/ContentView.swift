@@ -321,369 +321,433 @@ struct CompanionView: View {
     let parent: ParentProfile
     let state: ParentState
     let delay: Double
+
     @State private var bounce = false
-    var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                Circle().fill(bodyColor.gradient).frame(width: 54, height: 54).saturation(state == .needsCare ? 0.45 : 1)
-                HStack(spacing: 10) { Circle().frame(width: 5, height: 7); Circle().frame(width: 5, height: 7) }.foregroundStyle(WillowColors.ink).offset(y: -4)
-                Capsule().fill(.white.opacity(0.52)).frame(width: 26, height: 12).offset(y: 24)
-            }.overlay(alignment: .topTrailing) { Image(systemName: symbolName).font(.caption).foregroundStyle(.white).padding(5).background(WillowColors.deepLeaf.opacity(0.82), in: Circle()).offset(x: 5, y: -5) }
-            .offset(y: bounce ? -5 : 3).animation(.easeInOut(duration: state == .flourishing ? 1.15 : 1.8).repeatForever(autoreverses: true).delay(delay), value: bounce)
-            Text(parent.companionName).font(.caption.weight(.semibold)).foregroundStyle(WillowColors.deepLeaf)
-        }.onAppear { bounce = state != .needsCare }
-    }
-    private var symbolName: String { parent.companionType == "Rabbit" ? "hare.fill" : "pawprint.fill" }
-    private var bodyColor: Color { parent.companionType == "Rabbit" ? Color(red: 0.78, green: 0.69, blue: 0.60) : WillowColors.amber }
-}
-
-struct WillowTreeView: View {
-    let state: FamilyTreeState
-    @State private var sway = false
-    @State private var pulse = false
-    @State private var drift = false
+    @State private var breathe = false
+    @State private var blink = false
+    @State private var tailWag = false
+    @State private var blinkTask: Task<Void, Never>?
 
     var body: some View {
-        ZStack {
-            groundShadow
-            atmosphere
-            driftingLeaves
-            trunkLayer
-                .rotationEffect(.degrees(sway ? swayAmount : -swayAmount), anchor: .bottom)
-            canopyLayer
-                .offset(y: state == .needsCare ? 10 : 0)
-                .rotationEffect(.degrees(sway ? -1.4 : 1.4), anchor: .bottom)
-            frondLayer
-                .offset(y: state == .needsCare ? 12 : 0)
+        VStack(spacing: 5) {
+            if hasBespokeCharacter {
+                mascot
+                    .scaleEffect(0.66, anchor: .bottom)
+                    .frame(width: 68, height: 72, alignment: .bottom)
+                    .offset(y: -1)
+                    .saturation(state == .needsCare ? 0.48 : 1)
+            } else {
+                mascot
+                    .scaleEffect(breathe ? 0.76 : 0.73, anchor: .bottom)
+                    .frame(width: 68, height: 72)
+                    .offset(y: bounce ? -3 : 2)
+                    .saturation(state == .needsCare ? 0.48 : 1)
+                    .shadow(color: palette.shadow.opacity(0.24), radius: 10, x: 0, y: 7)
+                    .animation(.easeInOut(duration: bounceDuration).repeatForever(autoreverses: true).delay(delay), value: bounce)
+                    .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true).delay(delay * 0.5), value: breathe)
+            }
+
         }
-        .frame(height: 360)
-        .saturation(state == .needsCare ? 0.62 : 1)
         .onAppear {
-            sway = true
-            pulse = true
-            drift = true
+            bounce = !hasBespokeCharacter && state != .needsCare
+            breathe = true
+            tailWag = true
+            if !hasBespokeCharacter {
+                startBlinking()
+            }
+        }
+        .onDisappear {
+            blinkTask?.cancel()
+            blinkTask = nil
         }
     }
 
-    private var atmosphere: some View {
+    private func startBlinking() {
+        guard blinkTask == nil else { return }
+        blinkTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64((2.7 + delay) * 1_000_000_000))
+
+            while !Task.isCancelled {
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.08)) {
+                        blink = true
+                    }
+                }
+
+                try? await Task.sleep(nanoseconds: 130_000_000)
+
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.10)) {
+                        blink = false
+                    }
+                }
+
+                try? await Task.sleep(nanoseconds: UInt64(blinkPause * 1_000_000_000))
+            }
+        }
+    }
+
+    private var hasBespokeCharacter: Bool {
+        species == .fox || species == .rabbit
+    }
+
+    @ViewBuilder private var mascot: some View {
+        if species == .fox {
+            FennFoxView(state: companionState)
+        } else if species == .rabbit {
+            LumaBunnyView(state: companionState)
+        } else {
+            ZStack(alignment: .bottom) {
+                softAura
+                tail
+                mascotBody
+                head
+                face
+                sparkle
+            }
+        }
+    }
+
+    private var softAura: some View {
+        Circle()
+            .fill(palette.primary.opacity(0.16))
+            .frame(width: 74, height: 74)
+            .blur(radius: 10)
+            .offset(y: 11)
+    }
+
+    @ViewBuilder private var tail: some View {
+        switch species {
+        case .fox:
+            MascotTailShape(curl: 0.12)
+                .fill(LinearGradient(colors: [palette.primary, palette.secondary], startPoint: .bottomLeading, endPoint: .topTrailing))
+                .frame(width: 54, height: 62)
+                .overlay(alignment: .topTrailing) {
+                    MascotTailShape(curl: 0.12)
+                        .trim(from: 0.70, to: 1)
+                        .stroke(Color.white.opacity(0.80), lineWidth: 8)
+                        .frame(width: 54, height: 62)
+                }
+                .rotationEffect(.degrees(tailWag ? -9 : -17), anchor: .bottomLeading)
+                .offset(x: 28, y: -9)
+                .animation(.easeInOut(duration: 1.35).repeatForever(autoreverses: true).delay(delay), value: tailWag)
+        case .rabbit:
+            EmptyView()
+        case .squirrel:
+            MascotTailShape(curl: 0.55)
+                .fill(LinearGradient(colors: [palette.secondary, palette.primary], startPoint: .bottom, endPoint: .top))
+                .frame(width: 62, height: 78)
+                .rotationEffect(.degrees(tailWag ? 16 : 7), anchor: .bottomLeading)
+                .offset(x: 29, y: -16)
+                .animation(.easeInOut(duration: 1.45).repeatForever(autoreverses: true).delay(delay), value: tailWag)
+        case .otter:
+            Capsule()
+                .fill(palette.secondary)
+                .frame(width: 22, height: 56)
+                .rotationEffect(.degrees(tailWag ? 47 : 36), anchor: .top)
+                .offset(x: 31, y: 2)
+                .animation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true).delay(delay), value: tailWag)
+        }
+    }
+
+    private var mascotBody: some View {
         ZStack {
-            Circle()
-                .fill(glowColor.opacity(pulse ? glowOpacity : glowOpacity * 0.45))
-                .frame(width: 292, height: 292)
-                .blur(radius: 34)
-            Circle()
-                .fill(WillowColors.amber.opacity(pulse ? 0.13 * vitality : 0.05 * vitality))
-                .frame(width: 154, height: 154)
-                .blur(radius: 18)
-                .offset(x: -42, y: -40)
+            Capsule()
+                .fill(LinearGradient(colors: [palette.primary, palette.secondary], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 48, height: 58)
+            Capsule()
+                .fill(Color.white.opacity(species == .otter ? 0.36 : 0.46))
+                .frame(width: 28, height: 34)
+                .offset(y: 9)
+            HStack(spacing: 22) {
+                paw
+                paw
+            }
+            .offset(y: 29)
         }
-        .animation(.easeInOut(duration: 2.7).repeatForever(autoreverses: true), value: pulse)
+        .offset(y: 4)
     }
 
-    private var groundShadow: some View {
+    private var paw: some View {
+        Capsule()
+            .fill(palette.dark.opacity(0.78))
+            .frame(width: 12, height: 8)
+    }
+
+    private var head: some View {
+        ZStack {
+            ears
+            Circle()
+                .fill(LinearGradient(colors: [palette.primary.lighter(0.12), palette.primary], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 54, height: 54)
+                .overlay(alignment: .bottom) {
+                    muzzle
+                }
+        }
+        .offset(y: -30)
+    }
+
+    @ViewBuilder private var ears: some View {
+        switch species {
+        case .fox:
+            HStack(spacing: 20) {
+                triangleEar(rotation: -20)
+                triangleEar(rotation: 20)
+            }
+            .offset(y: -29)
+        case .rabbit:
+            HStack(spacing: 15) {
+                longEar(rotation: -11)
+                longEar(rotation: 13)
+            }
+            .offset(y: -42)
+        case .squirrel:
+            HStack(spacing: 25) {
+                roundedEar
+                roundedEar
+            }
+            .offset(y: -25)
+        case .otter:
+            HStack(spacing: 30) {
+                roundedEar.frame(width: 15, height: 15)
+                roundedEar.frame(width: 15, height: 15)
+            }
+            .offset(y: -18)
+        }
+    }
+
+    private func triangleEar(rotation: Double) -> some View {
+        MascotTriangle()
+            .fill(palette.primary)
+            .frame(width: 22, height: 28)
+            .overlay {
+                MascotTriangle()
+                    .fill(Color.white.opacity(0.38))
+                    .frame(width: 11, height: 14)
+                    .offset(y: 4)
+            }
+            .rotationEffect(.degrees(rotation))
+    }
+
+    private func longEar(rotation: Double) -> some View {
+        Capsule()
+            .fill(palette.primary)
+            .frame(width: 16, height: 46)
+            .overlay {
+                Capsule()
+                    .fill(Color.white.opacity(0.42))
+                    .frame(width: 8, height: 31)
+            }
+            .rotationEffect(.degrees(rotation), anchor: .bottom)
+    }
+
+    private var roundedEar: some View {
+        Circle()
+            .fill(palette.primary)
+            .frame(width: 18, height: 18)
+            .overlay {
+                Circle()
+                    .fill(Color.white.opacity(0.34))
+                    .frame(width: 9, height: 9)
+            }
+    }
+
+    private var muzzle: some View {
         Ellipse()
-            .fill(WillowColors.deepLeaf.opacity(0.16))
-            .frame(width: 205, height: 28)
-            .blur(radius: 8)
-            .offset(y: 158)
+            .fill(Color.white.opacity(species == .fox ? 0.74 : 0.58))
+            .frame(width: species == .otter ? 34 : 31, height: 21)
+            .offset(y: 5)
     }
 
-    private var trunkLayer: some View {
-        ZStack(alignment: .bottom) {
-            branch(direction: -1, reach: 104, lift: 118, width: 13, x: -6, y: -42)
-            branch(direction: 1, reach: 112, lift: 112, width: 12, x: 7, y: -38)
-            branch(direction: -0.45, reach: 66, lift: 134, width: 9, x: -2, y: -58)
-            branch(direction: 0.48, reach: 62, lift: 132, width: 8, x: 4, y: -64)
-
-            WillowTrunkShape()
-                .fill(
-                    LinearGradient(
-                        colors: [WillowColors.bark.opacity(0.96), Color(red: 0.62, green: 0.43, blue: 0.29), WillowColors.bark.opacity(0.78)],
-                        startPoint: .bottomLeading,
-                        endPoint: .topTrailing
-                    )
-                )
-                .frame(width: 78, height: 208)
-                .offset(y: 76)
-
-            WillowTrunkShape()
-                .stroke(Color.white.opacity(0.16), lineWidth: 2)
-                .frame(width: 55, height: 185)
-                .offset(x: -8, y: 67)
-        }
-        .shadow(color: WillowColors.bark.opacity(0.20), radius: 8, x: 0, y: 6)
-        .animation(.easeInOut(duration: swayDuration).repeatForever(autoreverses: true), value: sway)
-    }
-
-    private func branch(direction: CGFloat, reach: CGFloat, lift: CGFloat, width: CGFloat, x: CGFloat, y: CGFloat) -> some View {
-        WillowBranchShape(direction: direction, reach: reach, lift: lift)
-            .stroke(
-                LinearGradient(colors: [WillowColors.bark.opacity(0.92), WillowColors.bark.opacity(0.48)], startPoint: .bottom, endPoint: .top),
-                style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
-            )
-            .frame(width: reach + 42, height: lift + 24)
-            .offset(x: x, y: y)
-    }
-
-    private var canopyLayer: some View {
+    private var face: some View {
         ZStack {
-            ForEach(0..<18, id: \.self) { index in
-                canopyCluster(index: index)
+            HStack(spacing: 17) {
+                eye
+                eye
             }
-            ForEach(0..<22, id: \.self) { index in
-                crownLeaf(index: index)
+            .offset(y: -34)
+
+            nose
+                .offset(y: -25)
+
+            mouth
+                .offset(y: -18)
+
+            HStack(spacing: 28) {
+                blush
+                blush
             }
-        }
-        .frame(width: 315, height: 255)
-        .animation(.easeInOut(duration: swayDuration).repeatForever(autoreverses: true), value: sway)
-    }
+            .offset(y: -23)
 
-    private func canopyCluster(index: Int) -> some View {
-        let size = clusterSize(index)
-        let offset = clusterOffset(index)
-        let color = canopyColor(index)
-
-        return Circle()
-            .fill(
-                RadialGradient(
-                    colors: [color.opacity(0.96), color.opacity(0.50), color.opacity(0.08)],
-                    center: .center,
-                    startRadius: 8,
-                    endRadius: size.width * 0.56
-                )
-            )
-            .frame(width: size.width, height: size.height)
-            .offset(x: offset.x + (sway ? clusterDrift(index) : -clusterDrift(index)), y: offset.y)
-            .blur(radius: index.isMultiple(of: 4) ? 1.2 : 0.2)
-            .opacity(clusterOpacity)
-    }
-
-    private func crownLeaf(index: Int) -> some View {
-        let offset = crownLeafOffset(index)
-
-        return LeafShape()
-            .fill(leafGradient(index))
-            .frame(width: CGFloat(17 + index % 5), height: CGFloat(34 + index % 7))
-            .rotationEffect(.degrees(Double(index * 31) + (sway ? 5 : -5)))
-            .offset(x: offset.x, y: offset.y)
-            .opacity(0.58 + vitality * 0.30)
-    }
-
-    private var frondLayer: some View {
-        ZStack {
-            ForEach(0..<24, id: \.self) { index in
-                frond(index: index)
-            }
-        }
-        .frame(width: 330, height: 305)
-        .animation(.easeInOut(duration: swayDuration).repeatForever(autoreverses: true), value: sway)
-    }
-
-    private func frond(index: Int) -> some View {
-        WillowFrondView(index: index, leafColor: frondColor(index), vitality: vitality)
-            .frame(width: frondWidth(index), height: frondHeight(index))
-            .rotationEffect(.degrees(frondRotation(index) + (sway ? frondSway(index) : -frondSway(index))), anchor: .top)
-            .offset(x: frondX(index), y: frondY(index))
-            .opacity(frondOpacity(index))
-    }
-
-    private var driftingLeaves: some View {
-        ZStack {
-            ForEach(0..<floatingLeafCount, id: \.self) { index in
-                floatingLeaf(index: index)
+            if species == .otter {
+                whiskers
+                    .offset(y: -24)
             }
         }
     }
 
-    private func floatingLeaf(index: Int) -> some View {
-        LeafShape()
-            .fill(WillowColors.amber.opacity(0.45 * vitality))
-            .frame(width: 10, height: 22)
-            .rotationEffect(.degrees(drift ? Double(index * 37 + 180) : Double(index * 19)))
-            .offset(x: CGFloat((index % 6) * 48 - 120) + (drift ? 18 : -12), y: drift ? 140 : -144)
-            .opacity(0.18 + vitality * 0.48)
-            .animation(.linear(duration: Double(8 + index)).repeatForever(autoreverses: false).delay(Double(index) * 0.58), value: drift)
+    private var eye: some View {
+        Capsule()
+            .fill(WillowColors.ink)
+            .frame(width: 5.5, height: blink ? 2 : eyeHeight)
+            .overlay(alignment: .topLeading) {
+                Circle()
+                    .fill(Color.white.opacity(blink ? 0 : 0.82))
+                    .frame(width: 1.6, height: 1.6)
+                    .offset(x: 1, y: 1)
+            }
     }
 
-    private func clusterSize(_ index: Int) -> CGSize {
-        CGSize(width: CGFloat(82 + (index % 5) * 13), height: CGFloat(66 + (index % 4) * 12))
+    private var nose: some View {
+        Circle()
+            .fill(palette.dark)
+            .frame(width: species == .otter ? 6 : 5, height: species == .otter ? 6 : 5)
     }
 
-    private func clusterOffset(_ index: Int) -> CGPoint {
-        let row = index / 6
-        let column = index % 6
-        let x = CGFloat(column * 48 - 120 + (row == 1 ? 22 : 0))
-        let y = CGFloat(row * 46 - 112 + abs(column - 2) * 7)
-        return CGPoint(x: x, y: y)
+    private var mouth: some View {
+        Capsule()
+            .fill(WillowColors.ink.opacity(state == .needsCare ? 0.35 : 0.55))
+            .frame(width: state == .needsCare ? 9 : 13, height: 2)
+            .rotationEffect(.degrees(state == .tired || state == .needsCare ? 0 : -3))
     }
 
-    private func clusterDrift(_ index: Int) -> CGFloat {
-        CGFloat((index % 4) + 1) * 0.9
+    private var blush: some View {
+        Circle()
+            .fill(Color(red: 0.95, green: 0.55, blue: 0.48).opacity(state == .needsCare ? 0.12 : 0.24))
+            .frame(width: 8, height: 8)
     }
 
-    private func crownLeafOffset(_ index: Int) -> CGPoint {
-        let column = index % 8
-        let row = index / 8
-        return CGPoint(x: CGFloat(column * 37 - 130 + (row * 9)), y: CGFloat(row * 48 - 105 + abs(column - 3) * 5))
-    }
-
-    private func leafGradient(_ index: Int) -> LinearGradient {
-        LinearGradient(colors: [frondColor(index).opacity(0.95), WillowColors.moss.opacity(0.72)], startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-
-    private func canopyColor(_ index: Int) -> Color {
-        switch state {
-        case .flourishing:
-            return index.isMultiple(of: 3) ? Color(red: 0.52, green: 0.74, blue: 0.40) : WillowColors.leaf
-        case .growing:
-            return index.isMultiple(of: 2) ? WillowColors.leaf : WillowColors.moss
-        case .steady:
-            return index.isMultiple(of: 2) ? WillowColors.leaf.opacity(0.86) : WillowColors.moss.opacity(0.82)
-        case .tired:
-            return index.isMultiple(of: 2) ? WillowColors.moss.opacity(0.72) : Color(red: 0.54, green: 0.59, blue: 0.38)
-        case .needsCare:
-            return WillowColors.muted.opacity(0.68)
+    private var whiskers: some View {
+        VStack(spacing: 3) {
+            whiskerRow(rotation: -6)
+            whiskerRow(rotation: 6)
         }
     }
 
-    private func frondColor(_ index: Int) -> Color {
-        switch state {
-        case .flourishing:
-            return index.isMultiple(of: 2) ? Color(red: 0.57, green: 0.78, blue: 0.43) : WillowColors.leaf
-        case .growing:
-            return index.isMultiple(of: 2) ? WillowColors.leaf : WillowColors.moss
-        case .steady:
-            return WillowColors.leaf.opacity(0.84)
-        case .tired:
-            return WillowColors.moss.opacity(0.66)
-        case .needsCare:
-            return WillowColors.muted.opacity(0.60)
+    private func whiskerRow(rotation: Double) -> some View {
+        HStack(spacing: 18) {
+            Capsule().frame(width: 14, height: 1)
+            Capsule().frame(width: 14, height: 1)
+        }
+        .foregroundStyle(palette.dark.opacity(0.45))
+        .rotationEffect(.degrees(rotation))
+    }
+
+    @ViewBuilder private var sparkle: some View {
+        if state == .flourishing || state == .steady {
+            Image(systemName: "sparkle")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(WillowColors.amber.opacity(0.9))
+                .offset(x: -33, y: -57)
+                .opacity(breathe ? 1 : 0.35)
+                .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true).delay(delay), value: breathe)
         }
     }
 
-    private func frondWidth(_ index: Int) -> CGFloat { CGFloat(24 + (index % 3) * 5) }
-    private func frondHeight(_ index: Int) -> CGFloat { CGFloat(112 + (index % 6) * 15) }
-    private func frondRotation(_ index: Int) -> Double { Double((index % 9) * 5 - 20) }
-    private func frondSway(_ index: Int) -> Double { Double((index % 5) + 2) * 0.55 }
-    private func frondX(_ index: Int) -> CGFloat { CGFloat((index % 12) * 25 - 138) }
-    private func frondY(_ index: Int) -> CGFloat { CGFloat((index / 12) * 16 - 72 + abs((index % 12) - 5) * 4) }
-
-    private func frondOpacity(_ index: Int) -> Double {
-        let edgeFade = abs((index % 12) - 5) > 4 ? 0.78 : 1.0
-        return edgeFade * (0.58 + vitality * 0.38)
+    private var species: CompanionSpecies {
+        CompanionSpecies(rawValue: parent.companionType.lowercased()) ?? .fox
     }
 
-    private var floatingLeafCount: Int {
+    private var companionState: CompanionState {
         switch state {
-        case .flourishing: 11
-        case .growing: 8
-        case .steady: 5
-        case .tired: 3
-        case .needsCare: 2
+        case .flourishing: .happy
+        case .steady: .calm
+        case .tired, .needsCare: .tired
         }
     }
 
-    private var vitality: Double {
-        switch state {
-        case .flourishing: 1.0
-        case .growing: 0.86
-        case .steady: 0.72
-        case .tired: 0.48
-        case .needsCare: 0.30
+    private var palette: MascotPalette {
+        switch species {
+        case .fox:
+            MascotPalette(primary: WillowColors.amber, secondary: Color(red: 0.78, green: 0.38, blue: 0.20), dark: Color(red: 0.25, green: 0.13, blue: 0.09), shadow: WillowColors.amber)
+        case .rabbit:
+            MascotPalette(primary: Color(red: 0.78, green: 0.70, blue: 0.62), secondary: Color(red: 0.58, green: 0.50, blue: 0.45), dark: Color(red: 0.27, green: 0.22, blue: 0.20), shadow: Color(red: 0.58, green: 0.50, blue: 0.45))
+        case .squirrel:
+            MascotPalette(primary: Color(red: 0.62, green: 0.44, blue: 0.28), secondary: Color(red: 0.38, green: 0.25, blue: 0.17), dark: Color(red: 0.22, green: 0.13, blue: 0.09), shadow: Color(red: 0.46, green: 0.31, blue: 0.20))
+        case .otter:
+            MascotPalette(primary: Color(red: 0.46, green: 0.55, blue: 0.54), secondary: Color(red: 0.30, green: 0.40, blue: 0.42), dark: Color(red: 0.12, green: 0.19, blue: 0.20), shadow: Color(red: 0.30, green: 0.48, blue: 0.52))
         }
     }
 
-    private var clusterOpacity: Double { 0.64 + vitality * 0.30 }
-    private var swayAmount: Double { state == .needsCare ? 0.7 : 1.7 }
-    private var glowColor: Color { state == .flourishing ? WillowColors.amber : WillowColors.leaf }
-    private var glowOpacity: Double { 0.12 + vitality * 0.24 }
-
-    private var swayDuration: Double {
+    private var eyeHeight: CGFloat {
         switch state {
-        case .flourishing: 2.9
-        case .growing: 3.35
-        case .steady: 3.9
-        case .tired: 4.8
-        case .needsCare: 5.8
+        case .flourishing: 8
+        case .steady: 7
+        case .tired: 5
+        case .needsCare: 3
+        }
+    }
+
+    private var blinkPause: Double {
+        switch state {
+        case .flourishing: 4.4
+        case .steady: 5.2
+        case .tired: 6.2
+        case .needsCare: 7.0
+        }
+    }
+
+    private var bounceDuration: Double {
+        switch state {
+        case .flourishing: 1.05
+        case .steady: 1.55
+        case .tired: 2.3
+        case .needsCare: 3.8
         }
     }
 }
 
-struct WillowFrondView: View {
-    let index: Int
-    let leafColor: Color
-    let vitality: Double
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            WillowFrondStemShape(curve: curve)
-                .stroke(leafColor.opacity(0.62), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-
-            ForEach(0..<leafCount, id: \.self) { leafIndex in
-                leaflet(leafIndex)
-            }
-        }
-    }
-
-    private func leaflet(_ leafIndex: Int) -> some View {
-        let side: CGFloat = leafIndex.isMultiple(of: 2) ? -1 : 1
-        let y = CGFloat(leafIndex + 1) / CGFloat(leafCount + 1)
-        let width = CGFloat(8 + (leafIndex % 3) * 2)
-        let height = CGFloat(17 + (leafIndex % 4) * 2)
-        let horizontal = side * CGFloat(5 + (leafIndex % 4) * 2) + curve * 18 * y
-
-        return LeafShape()
-            .fill(LinearGradient(colors: [leafColor.opacity(0.96), leafColor.opacity(0.58)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: width, height: height)
-            .rotationEffect(.degrees(Double(side * 28) + Double(curve * 20)))
-            .offset(x: horizontal, y: y * 132)
-            .opacity(0.50 + vitality * 0.45)
-    }
-
-    private var leafCount: Int { max(5, Int(6 + vitality * 5)) }
-    private var curve: CGFloat { CGFloat((index % 7) - 3) * 0.055 }
+enum CompanionSpecies: String {
+    case fox, rabbit, squirrel, otter
 }
 
-struct WillowTrunkShape: Shape {
+struct MascotPalette {
+    let primary: Color
+    let secondary: Color
+    let dark: Color
+    let shadow: Color
+}
+
+struct MascotTriangle: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX - rect.width * 0.28, y: rect.maxY))
-        path.addCurve(to: CGPoint(x: rect.midX - rect.width * 0.08, y: rect.minY), control1: CGPoint(x: rect.midX - rect.width * 0.30, y: rect.height * 0.62), control2: CGPoint(x: rect.midX - rect.width * 0.20, y: rect.height * 0.24))
-        path.addCurve(to: CGPoint(x: rect.midX + rect.width * 0.20, y: rect.maxY), control1: CGPoint(x: rect.midX + rect.width * 0.20, y: rect.height * 0.28), control2: CGPoint(x: rect.midX + rect.width * 0.32, y: rect.height * 0.68))
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.closeSubpath()
         return path
     }
 }
 
-struct WillowBranchShape: Shape {
-    let direction: CGFloat
-    let reach: CGFloat
-    let lift: CGFloat
+struct MascotTailShape: Shape {
+    let curl: CGFloat
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let start = CGPoint(x: rect.midX, y: rect.maxY)
-        let end = CGPoint(x: rect.midX + direction * reach * 0.45, y: rect.maxY - lift)
-        let control1 = CGPoint(x: rect.midX + direction * reach * 0.10, y: rect.maxY - lift * 0.34)
-        let control2 = CGPoint(x: rect.midX + direction * reach * 0.36, y: rect.maxY - lift * 0.72)
-        path.move(to: start)
-        path.addCurve(to: end, control1: control1, control2: control2)
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.maxY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX * 0.80, y: rect.minY + rect.height * 0.18),
+            control1: CGPoint(x: rect.maxX * 0.76, y: rect.maxY * 0.92),
+            control2: CGPoint(x: rect.maxX * (0.95 - curl * 0.20), y: rect.height * 0.32)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.36, y: rect.maxY * 0.55),
+            control1: CGPoint(x: rect.maxX * (0.60 - curl * 0.16), y: rect.minY),
+            control2: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.height * (0.25 + curl * 0.18))
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.maxY),
+            control1: CGPoint(x: rect.minX + rect.width * 0.58, y: rect.maxY * 0.72),
+            control2: CGPoint(x: rect.minX + rect.width * 0.42, y: rect.maxY * 0.94)
+        )
+        path.closeSubpath()
         return path
     }
 }
 
-struct WillowFrondStemShape: Shape {
-    let curve: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addCurve(
-            to: CGPoint(x: rect.midX + curve * rect.width * 1.8, y: rect.maxY),
-            control1: CGPoint(x: rect.midX + curve * rect.width, y: rect.height * 0.32),
-            control2: CGPoint(x: rect.midX - curve * rect.width * 0.8, y: rect.height * 0.68)
-        )
-        return path
+private extension Color {
+    func lighter(_ amount: Double) -> Color {
+        mix(with: .white, by: amount)
     }
 }
 
@@ -733,19 +797,217 @@ struct OnboardingView: View {
 }
 
 struct HomeView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \ParentProfile.createdAt) private var parents: [ParentProfile]
     @Query(sort: \WellbeingMoment.date, order: .reverse) private var moments: [WellbeingMoment]
+    @Query(sort: \ProtectedTimePlan.startDate) private var plans: [ProtectedTimePlan]
+    @Query(sort: \WeeklyReflection.weekStartDate, order: .reverse) private var reflections: [WeeklyReflection]
+
     @State private var addMoment = false
     @State private var protect = false
+    @State private var showingSettings = false
+    @State private var confirmingReset = false
+    @State private var season: WillowSeason = .current()
+    @State private var dayPhase: WillowDayPhase = .current()
+
     private let engine = WellbeingEngine()
+
     var body: some View {
-        NavigationStack { ScrollView { VStack(spacing: WillowSpacing.large) {
-            VStack(alignment: .leading, spacing: 8) { Text("Your Willow is \(treeTitle)").font(.largeTitle.bold()).foregroundStyle(WillowColors.ink); Text(engine.statusText(for: treeState)).foregroundStyle(WillowColors.muted).lineSpacing(4) }
-            ZStack(alignment: .bottom) { WillowTreeView(state: treeState); HStack { if let first = parents.first { CompanionView(parent: first, state: engine.parentState(for: first, moments: moments), delay: 0.1) }; Spacer(); if parents.count > 1 { CompanionView(parent: parents[1], state: engine.parentState(for: parents[1], moments: moments), delay: 0.65) } }.padding(.horizontal, 24) }.frame(height: 380)
-            HStack { Button { addMoment = true } label: { Label("Add Moment", systemImage: "plus.circle.fill").frame(maxWidth: .infinity).padding().background(WillowColors.deepLeaf, in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(.white) }; Button { protect = true } label: { Label("Protect Time", systemImage: "shield.fill").frame(maxWidth: .infinity).padding().background(WillowColors.amber.opacity(0.22), in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(WillowColors.ink) } }
-            NudgeCard(text: engine.nudge(for: parents, moments: moments))
-        }.padding(WillowSpacing.large) }.background(WillowColors.backgroundGradient.ignoresSafeArea()).navigationBarHidden(true) }.sheet(isPresented: $addMoment) { AddMomentSheet() }.sheet(isPresented: $protect) { AddProtectedTimeSheet() }
+        NavigationStack {
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: WillowSpacing.large) {
+                        heroScene(
+                            topInset: proxy.safeAreaInsets.top,
+                            height: max(500, (proxy.size.height + proxy.safeAreaInsets.top) * 0.62)
+                        )
+
+                        Group {
+                            actionRow
+                            NudgeCard(text: engine.nudge(for: parents, moments: moments))
+                            demoControls
+                        }
+                        .padding(.horizontal, WillowSpacing.large)
+                    }
+                    .padding(.bottom, WillowSpacing.large)
+                }
+                .scrollIndicators(.hidden)
+                .background(WillowColors.backgroundGradient.ignoresSafeArea())
+                .ignoresSafeArea(edges: .top)
+            }
+            .navigationBarHidden(true)
+        }
+        .sheet(isPresented: $addMoment) { AddMomentSheet() }
+        .sheet(isPresented: $protect) { AddProtectedTimeSheet() }
+        .sheet(isPresented: $showingSettings) { demoSettingsSheet }
     }
+
+    /// The scene owns the whole top of the page: sky flows up under the
+    /// status bar, the header text floats on top of it, and the bottom
+    /// edge dissolves into the app background.
+    private func heroScene(topInset: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            WillowSceneView(season: season, phase: dayPhase) {
+                ZStack(alignment: .bottom) {
+                    WillowTreeView(state: treeState, season: season)
+                    HStack {
+                        if let first = parents.first {
+                            CompanionView(parent: first, state: engine.parentState(for: first, moments: moments), delay: 0.1)
+                        }
+                        Spacer()
+                        if parents.count > 1 {
+                            CompanionView(parent: parents[1], state: engine.parentState(for: parents[1], moments: moments), delay: 0.65)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .offset(y: -2)
+                }
+            }
+
+            header
+                .padding(.top, topInset + 8)
+                .padding(.horizontal, WillowSpacing.large)
+        }
+        .frame(height: height)
+        .sensoryFeedback(.selection, trigger: season)
+        .sensoryFeedback(.selection, trigger: dayPhase)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your Willow is \(treeTitle)")
+                .font(.largeTitle.bold())
+                .foregroundStyle(dayPhase == .night ? WillowColors.softCream : WillowColors.ink)
+            Text(engine.statusText(for: treeState))
+                .foregroundStyle(dayPhase == .night ? WillowColors.softCream.opacity(0.78) : WillowColors.muted)
+                .lineSpacing(4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.8), value: dayPhase)
+    }
+
+    /// Demo-only controls, tucked below the content so they never sit on
+    /// top of the scene: season, day/night and settings.
+    private var demoControls: some View {
+        HStack(spacing: 14) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.8)) { season = season.next }
+            } label: {
+                Image(systemName: season.symbolName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WillowColors.deepLeaf)
+                    .frame(width: 36, height: 36)
+                    .background(WillowColors.softCream.opacity(0.82), in: Circle())
+            }
+            .accessibilityLabel("Season: \(season.title). Tap to change season")
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.8)) { dayPhase = dayPhase.toggled }
+            } label: {
+                Image(systemName: dayPhase == .day ? "moon.fill" : "sun.max.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WillowColors.deepLeaf)
+                    .frame(width: 36, height: 36)
+                    .background(WillowColors.softCream.opacity(0.82), in: Circle())
+            }
+            .accessibilityLabel(dayPhase == .day ? "Switch to night" : "Switch to day")
+
+            Button {
+                showingSettings = true
+            } label: {
+                Label("Demo settings", systemImage: "gearshape.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WillowColors.muted)
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .background(WillowColors.softCream.opacity(0.82), in: Capsule())
+            }
+            .accessibilityLabel("Demo settings")
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    private var actionRow: some View {
+        HStack {
+            Button {
+                addMoment = true
+            } label: {
+                Label("Add Moment", systemImage: "plus.circle.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(WillowColors.deepLeaf, in: RoundedRectangle(cornerRadius: 18))
+                    .foregroundStyle(.white)
+            }
+
+            Button {
+                protect = true
+            } label: {
+                Label("Protect Time", systemImage: "shield.fill")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(WillowColors.amber.opacity(0.22), in: RoundedRectangle(cornerRadius: 18))
+                    .foregroundStyle(WillowColors.ink)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var demoSettingsSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: WillowSpacing.large) {
+                SoftCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Demo testing")
+                            .font(.title2.bold())
+                            .foregroundStyle(WillowColors.ink)
+                        Text("Return to the main menu when you need to test onboarding again. This clears local demo data only.")
+                            .foregroundStyle(WillowColors.muted)
+                            .lineSpacing(4)
+                    }
+                }
+
+                Button(role: .destructive) {
+                    confirmingReset = true
+                } label: {
+                    Label("Return to Main Menu", systemImage: "arrow.uturn.backward.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red.opacity(0.82))
+
+                Spacer()
+            }
+            .padding(WillowSpacing.large)
+            .background(WillowColors.backgroundGradient.ignoresSafeArea())
+            .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showingSettings = false }
+                }
+            }
+            .confirmationDialog("Return to main menu?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                Button("Clear Demo Data", role: .destructive) {
+                    resetToMainMenu()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This removes parents, moments, protected time, and reflections stored on this device.")
+            }
+        }
+    }
+
+    private func resetToMainMenu() {
+        moments.forEach(modelContext.delete)
+        plans.forEach(modelContext.delete)
+        reflections.forEach(modelContext.delete)
+        parents.forEach(modelContext.delete)
+        showingSettings = false
+    }
+
     private var treeState: FamilyTreeState { engine.familyTreeState(for: parents, moments: moments) }
     private var treeTitle: String { switch treeState { case .flourishing: "flourishing"; case .growing: "growing"; case .steady: "steady"; case .tired: "a little tired"; case .needsCare: "asking for care" } }
 }
